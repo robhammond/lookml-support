@@ -1,0 +1,18 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "target": "es2020", // Or a slightly older ES version if needed
+        "outDir": "out",     // <--- This is crucial
+        "lib": [
+            "es2020"
+        ],
+        "sourceMap": true,
+        "rootDir": "src",    // <--- Source files are in src
+        "strict": true       // Recommended
+        /* Additional options */
+    },
+    "exclude": [
+        "node_modules",
+        ".vscode-test"
+    ]
+}

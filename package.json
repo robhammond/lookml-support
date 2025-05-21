@@ -1,0 +1,98 @@
+{
+    "name": "lookml-support",
+    "displayName": "LookML Support",
+    "description": "Syntax highlighting, advanced code formatting, auto-completion, linting, hover documentation, and language support for LookML files with enhanced SQL highlighting in derived tables.",
+    "version": "0.0.2",
+    "publisher": "robhammond",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/robhammond/lookml-support"
+    },
+    "engines": {
+        "vscode": "^1.70.0"
+    },
+    "categories": [
+        "Programming Languages",
+        "Linters",
+        "Formatters"
+    ],
+    "activationEvents": [
+        "onLanguage:lookml"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "languages": [
+            {
+                "id": "lookml",
+                "aliases": [
+                    "LookML",
+                    "lookml"
+                ],
+                "extensions": [
+                    ".lookml",
+                    ".lkml",
+                    ".view.lkml",
+                    ".model.lkml",
+                    ".explore.lkml"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "lookml",
+                "scopeName": "source.lookml",
+                "path": "./syntaxes/lookml.tmLanguage.json"
+            }
+        ],
+        "configuration": {
+            "title": "LookML",
+            "properties": {
+                "lookml.linter.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable LookML linting based on the Look At Me Sideways (LAMS) rules"
+                },
+                "lookml.linter.rules": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "k1",
+                            "e1",
+                            "f1"
+                        ]
+                    },
+                    "default": [
+                        "k1",
+                        "e1",
+                        "f1"
+                    ],
+                    "description": "List of LAMS rules to enable (k1: primary keys, e1: join references, f1: cross-view references)"
+                },
+                "lookml.linter.disabledRules": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "List of LAMS rules to disable"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "dev": "code --extensionDevelopmentPath=`pwd`",
+        "package": "vsce package"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.70.0",
+        "typescript": "^4.x.x"
+    },
+    "dependencies": {
+        "lookml-parser": "^7.0.1"
+    }
+}

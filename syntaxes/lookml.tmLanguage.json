@@ -1,0 +1,228 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "LookML",
+    "scopeName": "source.lookml",
+    "patterns": [
+        { "include": "#comments" },
+        { "include": "#liquid" },
+        { "include": "#derived_table_block" },
+        { "include": "#blocks" },
+        { "include": "#keywords" },
+        { "include": "#strings" },
+        { "include": "#numbers" },
+        { "include": "#booleans" },
+        { "include": "#sql_block" },
+        { "include": "#identifiers_and_parameters" }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.number-sign.lookml",
+                    "match": "#.*$"
+                }
+            ]
+        },
+        "liquid": {
+            "patterns": [
+                {
+                    "name": "meta.embedded.block.liquid",
+                    "begin": "{%",
+                    "end": "%}",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.definition.template-expression.begin.liquid" }
+                    },
+                    "endCaptures": {
+                        "0": { "name": "punctuation.definition.template-expression.end.liquid" }
+                    },
+                    "patterns": [
+                        { "include": "source.liquid" }
+                    ]
+                },
+                {
+                    "name": "meta.embedded.inline.liquid",
+                    "begin": "{{",
+                    "end": "}}",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.definition.template-expression.begin.liquid" }
+                    },
+                    "endCaptures": {
+                        "0": { "name": "punctuation.definition.template-expression.end.liquid" }
+                    },
+                    "patterns": [
+                        { "include": "source.liquid" }
+                    ]
+                },
+                {
+                    "name": "keyword.other.liquid-parameter.lookml",
+                    "match": "\\$\\{[^\\}]*\\}"
+                }
+            ]
+        },
+        "blocks": {
+            "patterns": [
+                {
+                    "name": "meta.block.lookml",
+                    "begin": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*:\\s*([a-zA-Z_][a-zA-Z0-9_]*|`[^`]+`)\\s*\\{",
+                    "end": "\\}",
+                    "beginCaptures": {
+                        "1": { "name": "entity.name.type.lookml" },
+                        "2": { "name": "entity.name.function.lookml" }
+                    },
+                    "endCaptures": {
+                        "0": { "name": "punctuation.section.block.end.lookml" }
+                    },
+                    "patterns": [
+                        { "include": "$self" }
+                    ]
+                },
+                {
+                    "name": "punctuation.definition.block.begin.lookml",
+                    "match": "\\{"
+                },
+                {
+                    "name": "punctuation.definition.block.end.lookml",
+                    "match": "\\}"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.lookml",
+                    "match": "\\b(view|explore|dimension|measure|dimension_group|filter|parameter|derived_table|join|access_filter|datagroup|always_filter|conditionally_filter|extends|fields|from|sql_table_name|include|test|query)\\b"
+                },
+                {
+                    "name": "support.type.property-name.lookml",
+                    "match": "\\b(type|sql|html|label|description|hidden|primary_key|foreign_key|relationship|group_label|drill_fields|links|suggest_dimension|sql_on|value_format|value_format_name|timeframes|action|can_filter|case|default_value|allowed_value|suggest_explore|suggestable|tags|required_access_grants|format|order_by_field|symmetric_aggregates|fanout_on|view_label|sql_trigger|max_cache_age|sql_always_where|sql_where|suggestions|persist_for|datagroup_trigger)\\b\\s*:"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.lookml",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        { "name": "constant.character.escape.lookml", "match": "\\\\." }
+                    ]
+                },
+                {
+                    "name": "string.quoted.single.lookml",
+                    "begin": "'",
+                    "end": "'",
+                    "patterns": [
+                        { "name": "constant.character.escape.lookml", "match": "\\\\." }
+                    ]
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.lookml",
+                    "match": "\\b-?\\d+(\\.\\d+)?\\b"
+                }
+            ]
+        },
+        "booleans": {
+            "patterns": [
+                {
+                    "name": "constant.language.boolean.lookml",
+                    "match": "\\b(yes|no)\\b"
+                }
+            ]
+        },
+        "derived_table_block": {
+            "patterns": [
+                {
+                    "name": "meta.derived-table.lookml",
+                    "begin": "\\b(derived_table)\\s*:\\s*\\{",
+                    "end": "\\}",
+                    "beginCaptures": {
+                        "1": { "name": "keyword.control.lookml" }
+                    },
+                    "patterns": [
+                        { "include": "#derived_table_contents" }
+                    ]
+                }
+            ]
+        },
+        "derived_table_contents": {
+            "patterns": [
+                {
+                    "name": "meta.embedded.sql.derived-table.lookml",
+                    "begin": "\\b(sql)\\s*:\\s*",
+                    "end": ";;",
+                    "beginCaptures": {
+                        "1": {"name": "support.type.property-name.lookml"}
+                    },
+                    "endCaptures": {
+                        "0": { "name": "punctuation.terminator.sql-block.lookml" }
+                    },
+                    "contentName": "source.sql.embedded.lookml",
+                    "patterns": [
+                        { "include": "#looker_sql_keywords" },
+                        { "include": "#liquid" },
+                        { "include": "source.sql" }
+                    ]
+                },
+                {
+                    "name": "variable.parameter.sql-related.lookml",
+                    "match": "\\b(sql_trigger_value|persist_for|cluster_keys|distribution|indexes|sortkeys|partition_keys|create_process|sql_create|sql_where|datagroup_trigger)\\s*:"
+                },
+                { "include": "#strings" },
+                { "include": "#comments" },
+                { "include": "#identifiers_and_parameters" }
+            ]
+        },
+        "looker_sql_keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.other.looker-sql.lookml",
+                    "match": "\\b(\\${TABLE}|\\${EXTENDED}|\\${SQL_TABLE_NAME})\\b"
+                }
+            ]
+        },
+        "sql_block": {
+            "patterns": [
+                {
+                    "name": "meta.embedded.sql.lookml",
+                    "begin": "\\b(sql|sql_on|html|sql_trigger_value|sql_table_name|sql_foreign_key|sql_where|sql_preamble|expression_custom_filter|sql_start|sql_end|sql_latitude|sql_longitude|sql_step|sql_case)\\s*:\\s*",
+                    "end": ";;",
+                    "beginCaptures": {
+                         "1": {"name": "support.type.property-name.lookml"}
+                    },
+                    "endCaptures": {
+                        "0": { "name": "punctuation.terminator.sql-block.lookml" }
+                    },
+                    "contentName": "source.sql",
+                    "patterns": [
+                        { "include": "#looker_sql_keywords" },
+                        { "include": "#liquid" },
+                        { "include": "source.sql" }
+                    ]
+                }
+            ]
+        },
+        "identifiers_and_parameters": {
+             "patterns": [
+                {
+                    "comment": "Matches parameter names like 'label:' or 'type:'",
+                    "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*:",
+                    "captures": {
+                        "1": { "name": "variable.parameter.lookml" }
+                    }
+                },
+                {
+                     "comment": "General identifiers, could be field references or LookML object names",
+                     "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*)\\b",
+                     "captures": {
+                         "1": { "name": "variable.other.lookml" }
+                     }
+                }
+            ]
+        }
+    }
+}
