@@ -28,6 +28,10 @@ This extension provides comprehensive language support for LookML files in VS Co
 * SQL keyword capitalization
 * Proper indentation based on block nesting
 * Preserves template expressions
+* Groups fields by type (filters, parameters, dimensions, measures) into separate sections with comments
+* Sorts fields alphabetically within their sections
+* Preserves comments associated with fields
+* Configurable grouping and sorting options
 
 ### Linting
 
@@ -51,9 +55,16 @@ This extension provides comprehensive language support for LookML files in VS Co
 
 This extension contributes the following settings:
 
+### Linter Settings
+
 * `lookml.linter.enabled`: Enable/disable the LookML linter
 * `lookml.linter.rules`: List of enabled linting rules
 * `lookml.linter.disabledRules`: List of specific rules to disable
+
+### Formatter Settings
+
+* `lookml.formatter.groupFieldsByType`: When enabled, groups fields by type (filters, parameters, dimensions, measures) into separate sections with comments (default: `true`)
+* `lookml.formatter.sortFields`: When enabled, sorts fields alphabetically within their type sections (default: `true`)
 
 ### Available Linting Rules
 

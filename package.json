@@ -2,7 +2,7 @@
     "name": "lookml-support",
     "displayName": "LookML Support",
     "description": "Syntax highlighting, advanced code formatting, auto-completion, linting, hover documentation, and language support for LookML files with enhanced SQL highlighting in derived tables.",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "publisher": "hammondos",
     "repository": {
         "type": "git",
@@ -77,6 +77,16 @@
                     },
                     "default": [],
                     "description": "List of LAMS rules to disable"
+                },
+                "lookml.formatter.groupFieldsByType": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Group dimensions and measures into separate sections with comments"
+                },
+                "lookml.formatter.sortFields": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Sort dimensions and measures alphabetically by name within their sections"
                 }
             }
         }
@@ -86,11 +96,16 @@
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "dev": "code --extensionDevelopmentPath=`pwd`",
-        "package": "vsce package"
+        "package": "vsce package",
+        "test": "jest",
+        "test:watch": "jest --watch"
     },
     "devDependencies": {
+        "@types/jest": "^29.5.14",
         "@types/vscode": "^1.70.0",
         "esbuild": "^0.25.4",
+        "jest": "^29.7.0",
+        "ts-jest": "^29.3.4",
         "typescript": "^4.x.x"
     },
     "dependencies": {

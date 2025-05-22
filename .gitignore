@@ -3,3 +3,15 @@ node_modules
 .env
 out
 out/
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# Jest
+jest.config.js
+
+# Test artifacts
+src/test/temp/
+test-results/
+.DS_Store
