@@ -1,11 +1,11 @@
 import { LookMLFormatter, createLookMLFormattingProvider } from "../formatter";
 import * as vscode from "./vscode.mock";
 
-// Mock the vscode workspace configuration
-jest.mock("./vscode.mock", () => {
-    const originalModule = jest.requireActual("./vscode.mock");
+// Mock the vscode module entirely for this test
+jest.mock("vscode", () => {
+    const mockVscode = jest.requireActual("./vscode.mock");
     return {
-        ...originalModule,
+        ...mockVscode,
         workspace: {
             getConfiguration: jest.fn().mockImplementation((section) => {
                 return {
@@ -18,7 +18,7 @@ jest.mock("./vscode.mock", () => {
             }),
         },
     };
-});
+}, { virtual: true });
 
 describe("LookMLFormatter", () => {
     const options: vscode.FormattingOptions = {

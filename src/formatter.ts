@@ -152,6 +152,9 @@ export class LookMLFormatter {
         let indentLevel = 0;
         let currentField: LookMLBlock | null = null;
         let pendingComments: string[] = [];
+        let inSqlBlock = false;
+        let sqlBlockIndent = 0;
+        let hasEncounteredFieldInView = false;
         
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
@@ -171,10 +174,16 @@ export class LookMLFormatter {
                 if (currentField) {
                     // Comment inside field, add to current field
                     currentField.comments.push(trimmedLine);
-                    currentField.content.push(this.indentString.repeat(currentField.indent) + trimmedLine);
+                    currentField.content.push(this.indentString.repeat(currentField.indent + 1) + trimmedLine);
                 } else if (inView) {
-                    // Comment inside view but not in a field, could be for next field
-                    pendingComments.push(trimmedLine);
+                    // Comment inside view but not in a field
+                    if (!hasEncounteredFieldInView) {
+                        // This is a view-level comment (before any fields)
+                        currentView!.nonFieldBlocks.push(trimmedLine);
+                    } else {
+                        // This is a field-level comment (after we've seen fields)  
+                        pendingComments.push(trimmedLine);
+                    }
                 }
                 // Comments outside views are handled automatically
                 continue;
@@ -183,9 +192,19 @@ export class LookMLFormatter {
             // Check for block starts
             if (trimmedLine.match(/:\s*\{\s*$/) || trimmedLine.endsWith('{')) {
                 // Extract block type and name
-                const blockMatch = trimmedLine.match(/^([a-zA-Z0-9_]+)\s*:\s*([a-zA-Z0-9_]+)/);
-                const blockType = blockMatch ? blockMatch[1] : '';
-                const blockName = blockMatch ? blockMatch[2] : '';
+                const blockMatchWithName = trimmedLine.match(/^([a-zA-Z0-9_]+)\s*:\s*([a-zA-Z0-9_]+)/);
+                const blockMatchNoName = trimmedLine.match(/^([a-zA-Z0-9_]+)\s*:\s*\{/);
+                
+                let blockType = '';
+                let blockName = '';
+                
+                if (blockMatchWithName) {
+                    blockType = blockMatchWithName[1];
+                    blockName = blockMatchWithName[2];
+                } else if (blockMatchNoName) {
+                    blockType = blockMatchNoName[1];
+                    blockName = '';
+                }
                 
                 // Add to block stack
                 blockStack.push({ type: blockType, indent: indentLevel, name: blockName });
@@ -193,6 +212,7 @@ export class LookMLFormatter {
                 // Check if this is a view start
                 if (blockType === 'view' && !inView) {
                     inView = true;
+                    hasEncounteredFieldInView = false; // Reset for new view
                     currentView = {
                         name: blockName,
                         startLine: i,
@@ -203,15 +223,16 @@ export class LookMLFormatter {
                         nonFieldBlocks: []
                     };
                     
-                    // Add any pending comments to the view header
+                    // Don't add pending comments to the header - they should be view-level
                     if (pendingComments.length > 0) {
                         for (const comment of pendingComments) {
-                            currentView.header.push(this.indentString.repeat(indentLevel + 1) + comment);
+                            currentView.nonFieldBlocks.push(comment);
                         }
                         pendingComments = [];
                     }
                 } else if (inView && this.isFieldType(blockType)) {
                     // This is a field block within a view
+                    hasEncounteredFieldInView = true; // Mark that we've seen a field
                     const fieldContent: string[] = [];
                     const rawContent: string[] = [];
                     
@@ -305,8 +326,76 @@ export class LookMLFormatter {
                     currentField.rawContent.push(trimmedLine);
                 } else {
                     // Regular content inside view but not in a field
-                    // Format property lines with consistent indentation
-                    if (trimmedLine.includes(':') && !trimmedLine.endsWith('{')) {
+                    
+                    // Check for SQL block start
+                    if (!inSqlBlock && 
+                        (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value|html)\s*:\s*$/) || 
+                         (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value|html)\s*:/) && 
+                          !trimmedLine.match(/\{/) && !inSqlBlock))) {
+                        // Format the SQL property with proper spacing
+                        const formattedProperty = this.formatLookMLProperty(trimmedLine);
+                        currentView!.nonFieldBlocks.push(this.indentString.repeat(indentLevel) + formattedProperty);
+                        inSqlBlock = true;
+                        sqlBlockIndent = indentLevel;
+                    }
+                    // Check for SQL block end
+                    else if (inSqlBlock && trimmedLine.endsWith(';;')) {
+                        // Format SQL terminator with proper spacing
+                        const parts = trimmedLine.split(';;');
+                        if (parts.length > 1 && parts[0].trim().length > 0) {
+                            // SQL content followed by terminator on same line
+                            const sqlContent = parts[0].trim();
+                            const formattedSql = this.formatSqlKeywords(sqlContent);
+                            
+                            // Check if we're in a derived table
+                            const isDerivedTable = blockStack.some(block => block.type === 'derived_table');
+                            let effectiveIndent = sqlBlockIndent + 1;
+                            
+                            if (isDerivedTable) {
+                                const isMainSqlKeyword = /^\s*(SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|JOIN|UNION)/i.test(formattedSql);
+                                effectiveIndent = isMainSqlKeyword ? 3 : 4;
+                            }
+                            
+                            currentView!.nonFieldBlocks.push(this.indentString.repeat(effectiveIndent) + formattedSql + ' ;;');
+                        } else {
+                            currentView!.nonFieldBlocks.push(this.indentString.repeat(sqlBlockIndent) + ';;');
+                        }
+                        inSqlBlock = false;
+                    }
+                    // Handle SQL content
+                    else if (inSqlBlock) {
+                        let formattedLine = this.formatSqlKeywords(trimmedLine);
+                        
+                        // Check if we're in a derived table
+                        const isDerivedTable = blockStack.some(block => block.type === 'derived_table');
+                        
+                        // Check if this is a main SQL keyword
+                        const isMainSqlKeyword = /^\s*(SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|JOIN|UNION)/i.test(formattedLine);
+                        
+                        // Calculate SQL indentation
+                        let effectiveIndent = sqlBlockIndent + 1; // Default: one level deeper than the sql property
+                        
+                        // For derived tables, use special indentation rules
+                        if (isDerivedTable) {
+                            if (isMainSqlKeyword) {
+                                // Main SQL keywords: view(1) + derived_table(1) + sql(1) = 3 levels
+                                effectiveIndent = 3;
+                            } else {
+                                // Non-main SQL lines: view(1) + derived_table(1) + sql(1) + content(1) = 4 levels  
+                                effectiveIndent = 4;
+                            }
+                        } else {
+                            // For regular SQL blocks, add extra indentation for non-main keywords
+                            if (!isMainSqlKeyword) {
+                                effectiveIndent = sqlBlockIndent + 2;
+                            }
+                        }
+                        
+                        formattedLine = formattedLine.trimStart();
+                        currentView!.nonFieldBlocks.push(this.indentString.repeat(effectiveIndent) + formattedLine);
+                    }
+                    // Regular property lines
+                    else if (trimmedLine.includes(':') && !trimmedLine.endsWith('{')) {
                         const formattedProperty = this.formatLookMLProperty(trimmedLine);
                         currentView!.nonFieldBlocks.push(this.indentString.repeat(indentLevel) + formattedProperty);
                     } else {
@@ -346,6 +435,14 @@ export class LookMLFormatter {
     }
     
     /**
+     * Check if a comment is a formatter-generated comment separator
+     */
+    private isFormatterGeneratedComment(comment: string): boolean {
+        // Match patterns like "# ----- Dimensions -----" or "# ----- End of Dimensions -----"
+        return /^#\s*-----\s*.*\s*-----\s*$/.test(comment);
+    }
+    
+    /**
      * Format a view with its fields
      */
     private formatView(view: LookMLView, output: string[]): void {
@@ -354,22 +451,26 @@ export class LookMLFormatter {
             output.push(line);
         }
         
-        // Add non-field blocks - filter out unnecessary blank lines
-        let nonEmptyNonFieldBlocks = view.nonFieldBlocks.filter(line => line.trim().length > 0);
+        // Handle view-level comments and properties (non-field blocks) BEFORE organizing fields
+        let nonEmptyNonFieldBlocks = view.nonFieldBlocks.filter(line => {
+            const trimmed = line.trim();
+            // Filter out formatter-generated comment separators to prevent duplication
+            return trimmed.length > 0 && !this.isFormatterGeneratedComment(trimmed);
+        });
         if (nonEmptyNonFieldBlocks.length > 0) {
-            // Add at most one blank line after the header
-            output.push('');
-            
-            // Add the actual content with correct indentation
+            // Add view-level content with proper indentation
             for (const line of nonEmptyNonFieldBlocks) {
                 let trimmedLine = line.trim();
                 
-                // Check if this is a property line
-                if (trimmedLine.includes(':') && !trimmedLine.includes('{')) {
-                    // It's a top-level property in the view, indent by 2 spaces
+                // Check if this is a comment
+                if (trimmedLine.startsWith('#')) {
+                    // View-level comment - preserve original position
+                    output.push(this.indentString.repeat(1) + trimmedLine);
+                } else if (trimmedLine.includes(':') && !trimmedLine.includes('{')) {
+                    // It's a top-level property in the view, indent by one level
                     output.push(this.indentString.repeat(1) + trimmedLine);
                 } else {
-                    // Preserve existing indentation
+                    // Preserve existing indentation for other content
                     output.push(line);
                 }
             }
@@ -442,62 +543,42 @@ export class LookMLFormatter {
         // Find the indentation level for fields in this view
         const fieldIndent = view.fields.length > 0 ? view.fields[0].indent : 1;
         
+        // Add a blank line before any sections if there are fields to organize
+        let hasAddedFirstSection = false;
+        
         // Add filters section
         if (filters.length > 0) {
+            if (!hasAddedFirstSection) {
+                output.push('');
+                hasAddedFirstSection = true;
+            }
             this.addFieldSection(output, filters, "Filters", fieldIndent);
         }
         
         // Add parameters section
         if (parameters.length > 0) {
+            if (!hasAddedFirstSection) {
+                output.push('');
+                hasAddedFirstSection = true;
+            }
             this.addFieldSection(output, parameters, "Parameters", fieldIndent);
         }
         
         // Add dimensions section
         if (dimensions.length > 0 || dimensionGroups.length > 0) {
-            // Start dimensions section
-            if (this.groupFieldsByType) {
+            if (!hasAddedFirstSection) {
                 output.push('');
-                output.push(this.indentString.repeat(fieldIndent) + '# ----- Dimensions -----');
+                hasAddedFirstSection = true;
             }
-            
-            // Add dimensions
-            for (const field of dimensions) {
-                output.push('');
-                
-                // Add associated comments
-                if (field.comments.length > 0) {
-                    for (const comment of field.comments) {
-                        output.push(this.indentString.repeat(fieldIndent) + comment);
-                    }
-                }
-                
-                // Add the field content with proper indentation
-                this.addFormattedFieldContent(output, field);
-            }
-            
-            // Add dimension_groups
-            for (const field of dimensionGroups) {
-                output.push('');
-                
-                // Add associated comments
-                if (field.comments.length > 0) {
-                    for (const comment of field.comments) {
-                        output.push(this.indentString.repeat(fieldIndent) + comment);
-                    }
-                }
-                
-                // Add the field content with proper indentation
-                this.addFormattedFieldContent(output, field);
-            }
-            
-            // End dimensions section
-            if (this.groupFieldsByType) {
-                output.push(this.indentString.repeat(fieldIndent) + '# ----- End of Dimensions -----');
-            }
+            this.addFieldSection(output, [...dimensions, ...dimensionGroups], "Dimensions", fieldIndent);
         }
         
         // Add measures section
         if (measures.length > 0) {
+            if (!hasAddedFirstSection) {
+                output.push('');
+                hasAddedFirstSection = true;
+            }
             this.addFieldSection(output, measures, "Measures", fieldIndent);
         }
         
@@ -525,18 +606,15 @@ export class LookMLFormatter {
             return;
         }
         
-        // Add section header if grouping is enabled and a section header doesn't already exist
-        if (this.groupFieldsByType) {
-            const headerPattern = `# ----- ${sectionName} -----`;
-            const footerPattern = `# ----- End of ${sectionName} -----`;
-            
-            // Check if we already have a section header (to avoid duplicating when formatting multiple times)
-            const hasHeader = output.some(line => line.trim() === headerPattern);
-            
-            if (!hasHeader) {
-                output.push('');
-                output.push(this.indentString.repeat(indentLevel) + headerPattern);
-            }
+        // Check if the section header already exists in the output to avoid duplicates
+        const sectionHeader = `# ----- ${sectionName} -----`;
+        const indentedSectionHeader = this.indentString.repeat(indentLevel) + sectionHeader;
+        
+        const isHeaderAlreadyPresent = output.some(line => line.trim() === sectionHeader);
+        
+        // Add section header if grouping is enabled and not already present
+        if (this.groupFieldsByType && !isHeaderAlreadyPresent) {
+            output.push(indentedSectionHeader);
         }
         
         // Add fields
@@ -554,17 +632,28 @@ export class LookMLFormatter {
             this.addFormattedFieldContent(output, field);
         }
         
-        // Add section footer if grouping is enabled and a footer doesn't already exist
+        // Add section footer if grouping is enabled and not already present
         if (this.groupFieldsByType) {
-            const footerPattern = `# ----- End of ${sectionName} -----`;
+            const sectionFooter = `# ----- End of ${sectionName} -----`;
+            const indentedSectionFooter = this.indentString.repeat(indentLevel) + sectionFooter;
             
-            // Check if we already have a section footer (to avoid duplicating when formatting multiple times)
-            const hasFooter = output.some(line => line.trim() === footerPattern);
-            
-            if (!hasFooter) {
-                output.push(this.indentString.repeat(indentLevel) + footerPattern);
+            const isFooterAlreadyPresent = output.some(line => line.trim() === sectionFooter);
+            if (!isFooterAlreadyPresent) {
+                output.push(indentedSectionFooter);
             }
         }
+    }
+    
+    /**
+     * Helper to get the last non-empty line from output array
+     */
+    private getLastNonEmptyLine(output: string[]): string {
+        for (let i = output.length - 1; i >= 0; i--) {
+            if (output[i].trim() !== '') {
+                return output[i];
+            }
+        }
+        return '';
     }
     
     /**
@@ -591,7 +680,6 @@ export class LookMLFormatter {
         // (the first line is the block start line which we've already added)
         let nestedIndentLevel = blockIndent;
         let inSqlBlock = false;
-        let sqlPropertyLine = -1;
         
         for (let i = 1; i < field.rawContent.length; i++) {
             const line = field.rawContent[i];
@@ -622,16 +710,15 @@ export class LookMLFormatter {
                 continue;
             }
             
-            // Check for SQL block start
+            // Check for SQL or HTML block start
             if (!inSqlBlock && 
-                (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value)\s*:\s*$/) || 
-                 (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value)\s*:/) && 
+                (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value|html)\s*:\s*$/) || 
+                 (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value|html)\s*:/) && 
                   !trimmedLine.match(/\{/) && !inSqlBlock))) {
-                // Format the SQL property with proper spacing
+                // Format the SQL/HTML property with proper spacing
                 const formattedProperty = this.formatLookMLProperty(trimmedLine);
                 output.push(this.indentString.repeat(nestedIndentLevel) + formattedProperty);
                 inSqlBlock = true;
-                sqlPropertyLine = i;
                 continue;
             }
             
@@ -652,43 +739,57 @@ export class LookMLFormatter {
                 continue;
             }
             
-            // Handle SQL content
+            // Handle SQL/HTML content
             if (inSqlBlock) {
-                // Format SQL keywords if it's not a special template line
+                // For HTML content, preserve liquid tags and apply minimal formatting
                 let formattedLine = trimmedLine;
-                if (!trimmedLine.includes("{%") && 
-                    !trimmedLine.includes("{{") && 
-                    !trimmedLine.includes("${")) {
-                    formattedLine = this.formatSqlKeywords(trimmedLine);
-                } else if (trimmedLine.includes("${")) {
-                    // Special handling for SQL with LookML variables
-                    formattedLine = this.formatSqlWithLookMLVars(trimmedLine);
+                
+                // Check if this is HTML content vs SQL content
+                const isHtmlContent = field.rawContent.some(line => 
+                    line.trim().match(/\bhtml\s*:\s*$/)
+                );
+                
+                if (isHtmlContent) {
+                    // For HTML blocks, apply minimal formatting - just preserve structure
+                    // Don't format SQL keywords in HTML content
+                    if (trimmedLine.includes("color:")) {
+                        // Fix CSS formatting - add space after colon
+                        formattedLine = trimmedLine.replace(/color:(\w+)/g, "color: $1");
+                    }
+                } else {
+                    // Format SQL keywords if it's not a special template line
+                    if (!trimmedLine.includes("{%") && 
+                        !trimmedLine.includes("{{") && 
+                        !trimmedLine.includes("${")) {
+                        formattedLine = this.formatSqlKeywords(trimmedLine);
+                    } else if (trimmedLine.includes("${")) {
+                        // Special handling for SQL with LookML variables
+                        formattedLine = this.formatSqlWithLookMLVars(trimmedLine);
+                    }
                 }
-                
-                // Use a consistent indentation strategy for SQL
-                let sqlIndent = nestedIndentLevel + this.indentSize; // Base SQL indent
-                
-                // Check if this is a main SQL keyword
-                const isMainSqlKeyword = /^\s*(SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|JOIN|UNION|LEFT JOIN|RIGHT JOIN|INNER JOIN|FULL JOIN|OUTER JOIN)/i.test(formattedLine);
                 
                 // Check if this is inside a derived_table
                 const isDerivedTable = field.parentBlocks && field.parentBlocks.some(block => block.type === 'derived_table');
                 
-                // If it's not a main SQL keyword, add one more indent level
-                if (!isMainSqlKeyword) {
-                    // Add one more level for columns, conditions, etc.
-                    sqlIndent += this.indentSize; // Additional indent for nested content
-                }
+                // Check if this is a main SQL keyword
+                const isMainSqlKeyword = /^\s*(SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|JOIN|UNION|LEFT JOIN|RIGHT JOIN|INNER JOIN|FULL JOIN|OUTER JOIN)/i.test(formattedLine);
                 
-                // Special hard-coded handling for derived tables - enforce the pattern that users expect
-                if (isDerivedTable || formattedLine.match(/^\s*SELECT\b/i)) {
-                    // SQL content in a derived table has standardized indentation patterns
+                // Calculate proper SQL indentation
+                let sqlIndent = nestedIndentLevel + 1; // Default: one level deeper than the sql property
+                
+                // For derived tables, use special indentation rules
+                if (isDerivedTable) {
                     if (isMainSqlKeyword) {
-                        // Main SQL keywords (SELECT, FROM, etc.) go at base indentation + base indent
-                        sqlIndent = 1;
+                        // Main SQL keywords: view(1) + derived_table(1) + sql(1) = 3 levels
+                        sqlIndent = 3;
                     } else {
-                        // Non-main keywords (columns, conditions) get one more level
-                        sqlIndent = 2;
+                        // Non-main SQL lines: view(1) + derived_table(1) + sql(1) + content(1) = 4 levels
+                        sqlIndent = 4;
+                    }
+                } else {
+                    // For regular SQL blocks, add extra indentation for non-main keywords
+                    if (!isMainSqlKeyword) {
+                        sqlIndent = nestedIndentLevel + 2;
                     }
                 }
                 
@@ -725,7 +826,15 @@ export class LookMLFormatter {
             const colonIndex = line.indexOf(':');
             if (colonIndex >= 0) {
                 const propName = line.substring(0, colonIndex).trim();
-                const propValue = line.substring(colonIndex + 1).trim();
+                let propValue = line.substring(colonIndex + 1).trim();
+                
+                // Handle SQL terminators - ensure space before ;;
+                if (propValue.endsWith(';;')) {
+                    if (!propValue.endsWith(' ;;')) {
+                        propValue = propValue.slice(0, -2).trim() + ' ;;';
+                    }
+                }
+                
                 return `${propName}: ${propValue}`;
             }
         }
@@ -861,10 +970,10 @@ export class LookMLFormatter {
                 continue;
             }
             
-            // Check for SQL block start
+            // Check for SQL or HTML block start
             if (!inSqlBlock && 
-                (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value)\s*:\s*$/) || 
-                 (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value)\s*:/) && 
+                (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value|html)\s*:\s*$/) || 
+                 (trimmedLine.match(/\b(sql|sql_on|sql_where|sql_always_where|sql_trigger_value|html)\s*:/) && 
                   !trimmedLine.match(/\{/) && !inSqlBlock))) {
                 
                 // Format the SQL property with proper spacing
@@ -887,7 +996,7 @@ export class LookMLFormatter {
                     const sqlContent = parts[0].trim();
                     // Format the SQL content
                     const formattedSql = this.formatSqlKeywords(sqlContent);
-                    formattedLines.push(this.indentString.repeat(sqlBlockIndent) + formattedSql + ";;");
+                    formattedLines.push(this.indentString.repeat(sqlBlockIndent) + formattedSql + ' ;;');
                 }
                 inSqlBlock = false;
                 continue;
@@ -905,33 +1014,28 @@ export class LookMLFormatter {
                     trimmedLine = this.formatSqlWithLookMLVars(trimmedLine);
                 }
                 
-                // Give SQL statements proper indentation - indent SQL by one additional level
-                // If it's a SELECT, FROM, WHERE, GROUP BY, etc. line, use standard indentation
-                // If it's a column or condition line, add an extra indent level
-                // Use a consistent indentation strategy for SQL
-                let effectiveIndent = sqlBlockIndent + this.indentSize; // Base SQL indent
-                
                 // Check if this is a main SQL keyword
                 const isMainSqlKeyword = /^\s*(SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|JOIN|UNION|LEFT JOIN|RIGHT JOIN|INNER JOIN|FULL JOIN|OUTER JOIN)/i.test(trimmedLine);
                 
                 // Check if we're in a derived_table context
                 const isDerivedTable = blockStack.length > 0 && blockStack.some(block => block.type === 'derived_table');
                 
-                // If it's not a main SQL keyword, add one more indent level
-                if (!isMainSqlKeyword) {
-                    // Add one more level for columns, conditions, etc.
-                    effectiveIndent += this.indentSize; // Additional indent for nested content
-                }
+                // Calculate SQL indentation
+                let effectiveIndent = sqlBlockIndent + 1; // Base SQL indent is one level deeper than the sql property
                 
-                // Special hard-coded handling for derived tables - enforce the pattern that users expect
-                if (isDerivedTable || trimmedLine.match(/^\s*SELECT\b/i)) {
-                    // SQL content in a derived table has standardized indentation patterns
+                // For derived tables, use special indentation rules
+                if (isDerivedTable) {
                     if (isMainSqlKeyword) {
-                        // Main SQL keywords (SELECT, FROM, etc.) go at base view indentation + 3
-                        effectiveIndent = 1;
+                        // Main SQL keywords: view(1) + derived_table(1) + sql(1) = 3 levels
+                        effectiveIndent = 3;
                     } else {
-                        // Non-main keywords (columns, conditions) get one more level
-                        effectiveIndent = 2;
+                        // Non-main SQL lines: view(1) + derived_table(1) + sql(1) + content(1) = 4 levels
+                        effectiveIndent = 4;
+                    }
+                } else {
+                    // For regular SQL blocks, add extra indentation for non-main keywords
+                    if (!isMainSqlKeyword) {
+                        effectiveIndent = sqlBlockIndent + 2;
                     }
                 }
                 
@@ -949,9 +1053,11 @@ export class LookMLFormatter {
                 
                 // Handle SQL terminators on property lines
                 if (formattedLine.endsWith(';;')) {
-                    const parts = formattedLine.split(';;');
-                    const propContent = parts[0].trim();
-                    formattedLine = propContent + ";;";
+                    if (!formattedLine.endsWith(' ;;')) {
+                        const parts = formattedLine.split(';;');
+                        const propContent = parts[0].trim();
+                        formattedLine = propContent + ' ;;';
+                    }
                 }
                 
                 // Special handling for SQL properties that don't have content on the same line

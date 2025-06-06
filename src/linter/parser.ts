@@ -89,6 +89,7 @@ interface SimpleField {
   primary_key?: boolean;
   html?: string;
   label?: string;
+  description?: string;
   [key: string]: any;
 }
 
@@ -300,6 +301,24 @@ function extractFields(content: string, fieldType: string): Record<string, Simpl
     const pkMatch = fieldContent.match(/primary_key:\s*(yes|true|no|false)/i);
     if (pkMatch) {
       field.primary_key = pkMatch[1].toLowerCase() === 'yes' || pkMatch[1].toLowerCase() === 'true';
+    }
+    
+    // Extract label
+    const labelMatch = fieldContent.match(/label:\s*"([^"]+)"/);
+    if (labelMatch) {
+      field.label = labelMatch[1];
+    }
+    
+    // Extract description
+    const descriptionMatch = fieldContent.match(/description:\s*"([^"]+)"/);
+    if (descriptionMatch) {
+      field.description = descriptionMatch[1];
+    }
+    
+    // Extract html
+    const htmlMatch = fieldContent.match(/html:\s*([\s\S]*?)(?=\n\s*[a-zA-Z_]+:|$)/);
+    if (htmlMatch) {
+      field.html = htmlMatch[1].trim();
     }
     
     fields[fieldName] = field;

@@ -1,5 +1,11 @@
 import { LOOKML_DOCS, formatDocumentation } from '../documentation';
 
+// Mock the vscode module for documentation tests
+jest.mock("vscode", () => {
+    const mockVscode = jest.requireActual("./vscode.mock");
+    return mockVscode;
+}, { virtual: true });
+
 describe('LookML Documentation', () => {
   describe('LOOKML_DOCS data structure', () => {
     it('should have documentation for top-level elements', () => {
